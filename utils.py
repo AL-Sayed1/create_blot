@@ -2,10 +2,8 @@ import svgpathtools
 import numpy as np
 from xml.dom import minidom
 import re
-
-
-def px_to_mm(px):
-    return px * 0.2645833333
+from io import BytesIO, StringIO
+from PIL import Image
 
 
 def parse_transform(transform_str):
@@ -36,7 +34,7 @@ def get_svg_dimensions(svg_elem):
     viewBox = svg_elem.getAttribute("viewBox")
     if viewBox:
         _, _, width, height = map(float, viewBox.split())
-        return px_to_mm(width), px_to_mm(height)
+        return width, height
 
     width = svg_elem.getAttribute("width")
     height = svg_elem.getAttribute("height")
@@ -45,33 +43,39 @@ def get_svg_dimensions(svg_elem):
         width = str(width).replace(unit, "")
         height = str(height).replace(unit, "")
 
-    return px_to_mm(float(width)), px_to_mm(float(height))
+    return float(width), float(height)
 
 
 def get_path_complexity(path):
     return len(path) * len(path.continuous_subpaths())
 
 
-from io import StringIO, BytesIO
-
-
-class SVGToBlot:
-    def __init__(self, svg_file):
+class ConvertToBlot:
+    def __init__(self, file, file_type):
         """
         Args:
-            svg_file: BytesIO or bytes object containing SVG data from Streamlit upload
+            file: BytesIO or bytes object containing SVG or PNG data from Streamlit upload
+            file_type: str, either 'svg' or 'png'
         """
-        self.svg_content = svg_file.read() if hasattr(svg_file, "read") else svg_file
-        self.polylines = self._generate_polylines()
-        self.blot_js = self.svg_to_blot()
+        self.file_type = file_type
+        self.file_content = file.read() if hasattr(file, "read") else file
 
-    def _generate_polylines(self):
+        if self.file_type == 'svg':
+            self.polylines = self._svg_to_blot()
+        elif self.file_type == 'png':
+            self.polylines = self._png_to_blot()
+        else:
+            raise ValueError("Unsupported file type. Use 'svg' or 'png'.")
+
+        self.blot_js = self.blot_code()
+
+    def _svg_to_blot(self):
         """Initialize polylines from SVG file content"""
         try:
             svg_string = (
-                self.svg_content.decode("utf-8")
-                if isinstance(self.svg_content, bytes)
-                else self.svg_content
+                self.file_content.decode("utf-8")
+                if isinstance(self.file_content, bytes)
+                else self.file_content
             )
 
             svg_file = StringIO(svg_string)
@@ -79,7 +83,6 @@ class SVGToBlot:
 
             doc = minidom.parseString(svg_string)
             svg_elem = doc.getElementsByTagName("svg")[0]
-            self.width, self.height = get_svg_dimensions(svg_elem)
 
             all_polylines = []
             for path, attr in zip(paths, attributes):
@@ -97,8 +100,8 @@ class SVGToBlot:
                     for t in np.linspace(0, 1, samples):
                         try:
                             point = subpath.point(t)
-                            x = px_to_mm((point.real * scale_x + tx))
-                            y = self.height - px_to_mm((point.imag * scale_y + ty))
+                            x = (point.real * scale_x + tx)
+                            y = self.height - (point.imag * scale_y + ty)
                             subpath_points.append([x, y])
                         except:
                             continue
@@ -113,26 +116,69 @@ class SVGToBlot:
 
         except Exception as e:
             raise ValueError(f"Failed to process SVG: {str(e)}")
+        
+    def _png_to_blot(self):
+        """Initialize polylines from PNG file content"""
+        image = Image.open(BytesIO(self.file_content)).convert('RGBA')
+        threshold = 128
+        im_row_list = []
+        for y in range(image.height):
+            row = ''
+            for x in range(image.width):
+                r, g, b, a = image.getpixel((x, y))
+                brightness = (r + g + b) / 3
+                if a == 0 or brightness > threshold:
+                    row += '1'
+                else:
+                    row += '0'
+            im_row_list.append(row)
+    
+        width = image.width
+        height = image.height
 
-    def svg_to_blot(self):
+        lines = []
+    
+        def makeLine(startX, endX, y):
+            y = height - y
+            lines.append([
+                [startX, y],
+                [endX, y]
+            ])
+    
+        for y in range(height):
+            line_beginning = -1
+    
+            for x in range(width):
+                if im_row_list[y][x] == '0':
+                    if line_beginning == -1:
+                        line_beginning = x
+                else:
+                    if line_beginning != -1:
+                        makeLine(line_beginning, x, y)
+                        line_beginning = -1
+    
+            if line_beginning != -1:
+                makeLine(line_beginning, width, y)
+    
+        return lines
+
+        
+    def blot_code(self):
         blot_js = f"""const {{ scale, translate, originate, resample, simplify, bounds }} = blotToolkit;
-    
-    // Initialize document dimensions
-    setDocDimensions({self.width}, {self.height});
-    
-    let polylines = {self.polylines};
-    
-    // Optimize polylines
-    polylines = resample(polylines, 0.5); // Resample with 0.5mm spacing
-    polylines = simplify(polylines, 0.1, true); // High quality simplification
-    
-    // Calculate optimal scale to fit workarea
-    const bbox = bounds(polylines);
-    const maxDim = Math.max(bbox.width, bbox.height);
-    const scaleFactor = Math.min(125/maxDim, 1) * 0.95; // 95% of max size
-    
-    scale(polylines, scaleFactor);
-    
-    drawLines(polylines);
+
+let polylines = {self.polylines};
+
+// Optimize polylines
+polylines = resample(polylines, 0.5); // Resample with 0.5mm spacing
+polylines = simplify(polylines, 0.1, true); // High quality simplification
+
+// Calculate optimal scale to fit workarea
+const bbox = bounds(polylines);
+const maxDim = Math.max(bbox.width, bbox.height);
+const scaleFactor = Math.min(125/maxDim, 1) * 0.95; // 95% of max size
+
+scale(polylines, scaleFactor);
+bt.originate(polylines) 
+drawLines(polylines);
     """
         return blot_js
