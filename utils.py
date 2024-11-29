@@ -69,53 +69,6 @@ class ConvertToBlot:
 
         self.blot_js = self.blot_code()
 
-    def _svg_to_blot(self):
-        """Initialize polylines from SVG file content"""
-        try:
-            svg_string = (
-                self.file_content.decode("utf-8")
-                if isinstance(self.file_content, bytes)
-                else self.file_content
-            )
-
-            svg_file = StringIO(svg_string)
-            paths, attributes = svgpathtools.svg2paths(svg_file)
-
-            doc = minidom.parseString(svg_string)
-            svg_elem = doc.getElementsByTagName("svg")[0]
-
-            all_polylines = []
-            for path, attr in zip(paths, attributes):
-                transform = attr.get("transform", "")
-                scale_x, scale_y, tx, ty = parse_transform(transform)
-
-                complexity = get_path_complexity(path)
-                base_samples = 100
-                max_samples = 1000
-                samples = min(max(base_samples, complexity * 5), max_samples)
-
-                points = []
-                for subpath in path.continuous_subpaths():
-                    subpath_points = []
-                    for t in np.linspace(0, 1, samples):
-                        try:
-                            point = subpath.point(t)
-                            x = (point.real * scale_x + tx)
-                            y = self.height - (point.imag * scale_y + ty)
-                            subpath_points.append([x, y])
-                        except:
-                            continue
-                    if subpath_points:
-                        points.append(subpath_points)
-
-                for subpath_points in points:
-                    points_str = ",".join(f"[{x},{y}]" for x, y in subpath_points)
-                    all_polylines.append(f"[{points_str}]")
-
-            return f"[{','.join(all_polylines)}]"
-
-        except Exception as e:
-            raise ValueError(f"Failed to process SVG: {str(e)}")
         
     def _png_to_blot(self):
         """Initialize polylines from PNG file content"""
@@ -161,6 +114,38 @@ class ConvertToBlot:
                 makeLine(line_beginning, width, y)
     
         return lines
+
+    def _svg_to_blot(self):
+        """Initialize polylines from SVG file content"""
+        svg = minidom.parseString(self.file_content)
+        paths = svg.getElementsByTagName('path')
+        polylines = []
+
+        for path in paths:
+            d = path.getAttribute('d')
+            path_obj = svgpathtools.parse_path(d)
+            polyline = []
+
+            for segment in path_obj:
+                if isinstance(segment, svgpathtools.Line):
+                    polyline.append([segment.start.real, segment.start.imag])
+                    polyline.append([segment.end.real, segment.end.imag])
+                elif isinstance(segment, svgpathtools.CubicBezier):
+                    polyline.append([segment.start.real, segment.start.imag])
+                    polyline.append([segment.control1.real, segment.control1.imag])
+                    polyline.append([segment.control2.real, segment.control2.imag])
+                    polyline.append([segment.end.real, segment.end.imag])
+                elif isinstance(segment, svgpathtools.QuadraticBezier):
+                    polyline.append([segment.start.real, segment.start.imag])
+                    polyline.append([segment.control.real, segment.control.imag])
+                    polyline.append([segment.end.real, segment.end.imag])
+                elif isinstance(segment, svgpathtools.Arc):
+                    polyline.append([segment.start.real, segment.start.imag])
+                    polyline.append([segment.end.real, segment.end.imag])
+
+            polylines.append(polyline)
+
+        return polylines
 
         
     def blot_code(self):
