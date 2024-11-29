@@ -5,8 +5,6 @@ import re
 from io import BytesIO, StringIO
 from PIL import Image
 
-def px_to_mm(px):
-    return px * 0.2645833333
 
 def parse_transform(transform_str):
     if not transform_str:
@@ -75,40 +73,47 @@ class ConvertToBlot:
         """Initialize polylines from SVG file content"""
         try:
             svg_string = (
-                self.svg_content.decode("utf-8")
-                if isinstance(self.svg_content, bytes)
-                else self.svg_content
+                self.file_content.decode("utf-8")
+                if isinstance(self.file_content, bytes)
+                else self.file_content
             )
+
             svg_file = StringIO(svg_string)
             paths, attributes = svgpathtools.svg2paths(svg_file)
+
             doc = minidom.parseString(svg_string)
             svg_elem = doc.getElementsByTagName("svg")[0]
-            self.width, self.height = get_svg_dimensions(svg_elem)
+
             all_polylines = []
             for path, attr in zip(paths, attributes):
                 transform = attr.get("transform", "")
                 scale_x, scale_y, tx, ty = parse_transform(transform)
+
                 complexity = get_path_complexity(path)
                 base_samples = 100
                 max_samples = 1000
                 samples = min(max(base_samples, complexity * 5), max_samples)
+
                 points = []
                 for subpath in path.continuous_subpaths():
                     subpath_points = []
                     for t in np.linspace(0, 1, samples):
                         try:
                             point = subpath.point(t)
-                            x = px_to_mm((point.real * scale_x + tx))
-                            y = self.height - px_to_mm((point.imag * scale_y + ty))
+                            x = (point.real * scale_x + tx)
+                            y = self.height - (point.imag * scale_y + ty)
                             subpath_points.append([x, y])
                         except:
                             continue
                     if subpath_points:
                         points.append(subpath_points)
+
                 for subpath_points in points:
                     points_str = ",".join(f"[{x},{y}]" for x, y in subpath_points)
                     all_polylines.append(f"[{points_str}]")
+
             return f"[{','.join(all_polylines)}]"
+
         except Exception as e:
             raise ValueError(f"Failed to process SVG: {str(e)}")
         
