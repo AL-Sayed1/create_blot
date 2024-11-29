@@ -2,6 +2,8 @@
 
 This project is a web application that converts SVG files into Blot JavaScript code 😃.
 
+![screenshot](screenshot.png)
+
 ## Features
 
 - Upload SVG files
