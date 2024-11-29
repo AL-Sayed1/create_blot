@@ -71,7 +71,7 @@ class ConvertToBlot:
 
         self.blot_js = self.blot_code()
 
-    def _generate_polylines(self):
+    def _svg_to_blot(self):
         """Initialize polylines from SVG file content"""
         try:
             svg_string = (
