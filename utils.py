@@ -4,6 +4,7 @@ from xml.dom import minidom
 import re
 from io import BytesIO, StringIO
 from PIL import Image
+import cv2
 
 
 def parse_transform(transform_str):
@@ -60,83 +61,65 @@ class ConvertToBlot:
         self.file_type = file_type
         self.file_content = file.read() if hasattr(file, "read") else file
 
-        if self.file_type == 'svg':
+        if self.file_type == "svg":
             self.polylines = self._svg_to_blot()
-        elif self.file_type == 'png':
+        elif self.file_type == "png":
             self.polylines = self._png_to_blot()
         else:
             raise ValueError("Unsupported file type. Use 'svg' or 'png'.")
 
         self.blot_js = self.blot_code()
 
-        
     def _png_to_blot(self):
         """Initialize polylines from PNG file content"""
-        image = Image.open(BytesIO(self.file_content)).convert('RGBA')
-        threshold = 128
-        im_row_list = []
-        for y in range(image.height):
-            row = ''
-            for x in range(image.width):
-                r, g, b, a = image.getpixel((x, y))
-                brightness = (r + g + b) / 3
-                if a == 0 or brightness > threshold:
-                    row += '1'
-                else:
-                    row += '0'
-            im_row_list.append(row)
-    
-        width = image.width
-        height = image.height
+        image = Image.open(BytesIO(self.file_content)).convert(
+            "L"
+        )  # Convert to grayscale
+        image = image.point(
+            lambda p: p < 128 and 255
+        )  # Invert the binarization threshold to detect objects different from the background
+        image = image.convert("1")  # Convert to binary image (black and white)
 
-        lines = []
-    
-        def makeLine(startX, endX, y):
-            y = height - y
-            lines.append([
-                [startX, y],
-                [endX, y]
-            ])
-    
-        for y in range(height):
-            line_beginning = -1
-    
-            for x in range(width):
-                if im_row_list[y][x] == '0':
-                    if line_beginning == -1:
-                        line_beginning = x
-                else:
-                    if line_beginning != -1:
-                        makeLine(line_beginning, x, y)
-                        line_beginning = -1
-    
-            if line_beginning != -1:
-                makeLine(line_beginning, width, y)
-    
-        return lines
+        # Flip the image vertically
+        image = image.transpose(Image.FLIP_TOP_BOTTOM)
+
+        # Convert PIL image to OpenCV format
+        open_cv_image = np.array(image, dtype=np.uint8)
+
+        # Find contours using OpenCV
+        contours, hierarchy = cv2.findContours(
+            open_cv_image, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        # Convert contours to the desired format
+        polylines = []
+        for contour in contours:
+            polyline = contour.reshape(-1, 2).tolist()
+            polylines.append(polyline)
+
+        return polylines
 
     def _svg_to_blot(self):
         """Initialize polylines from SVG file content"""
         svg = minidom.parseString(self.file_content)
-        paths = svg.getElementsByTagName('path')
+        paths = svg.getElementsByTagName("path")
         polylines = []
-    
+
         for path in paths:
-            d = path.getAttribute('d')
+            d = path.getAttribute("d")
             path_obj = svgpathtools.parse_path(d)
             polyline = []
-    
+
             for segment in path_obj:
                 num_samples = 200
                 for i in range(num_samples + 1):
                     point = segment.point(i / num_samples)
                     polyline.append([point.real, -point.imag])
-    
+
             polylines.append(polyline)
-    
+
         return polylines
 
-        
     def blot_code(self):
         blot_js = f"""let polylines = {self.polylines};
 

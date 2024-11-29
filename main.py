@@ -13,7 +13,7 @@ def main():
 
     if uploaded_file:
         file_name = uploaded_file.name
-        file_extension = file_name.split('.')[-1].lower()
+        file_extension = file_name.split(".")[-1].lower()
         file_content = uploaded_file.read()
         uploaded_file.seek(0)
 
