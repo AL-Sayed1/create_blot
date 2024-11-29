@@ -74,24 +74,20 @@ class ConvertToBlot:
         """Initialize polylines from PNG file content"""
         image = Image.open(BytesIO(self.file_content)).convert(
             "L"
-        )  # Convert to grayscale
+        )
         image = image.point(
             lambda p: p < 128 and 255
-        )  # Invert the binarization threshold to detect objects different from the background
-        image = image.convert("1")  # Convert to binary image (black and white)
+        )
+        image = image.convert("1")
 
-        # Flip the image vertically
         image = image.transpose(Image.FLIP_TOP_BOTTOM)
 
-        # Convert PIL image to OpenCV format
         open_cv_image = np.array(image, dtype=np.uint8)
 
-        # Find contours using OpenCV
         contours, hierarchy = cv2.findContours(
             open_cv_image, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE
         )
 
-        # Convert contours to the desired format
         polylines = []
         for contour in contours:
             polyline = contour.reshape(-1, 2).tolist()
