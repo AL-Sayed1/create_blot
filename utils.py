@@ -164,20 +164,18 @@ class ConvertToBlot:
 
         
     def blot_code(self):
-        blot_js = f"""const {{ scale, translate, originate, resample, simplify, bounds }} = blotToolkit;
-
-let polylines = {self.polylines};
+        blot_js = f"""let polylines = {self.polylines};
 
 // Optimize polylines
-polylines = resample(polylines, 0.5); // Resample with 0.5mm spacing
-polylines = simplify(polylines, 0.1, true); // High quality simplification
+polylines = bt.resample(polylines, 0.5); // Resample with 0.5mm spacing
+polylines = bt.simplify(polylines, 0.1, true); // High quality simplification
 
 // Calculate optimal scale to fit workarea
-const bbox = bounds(polylines);
+const bbox = bt.bounds(polylines);
 const maxDim = Math.max(bbox.width, bbox.height);
 const scaleFactor = Math.min(125/maxDim, 1) * 0.95; // 95% of max size
 
-scale(polylines, scaleFactor);
+bt.scale(polylines, scaleFactor);
 bt.originate(polylines) 
 drawLines(polylines);
     """
