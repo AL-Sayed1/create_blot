@@ -120,31 +120,20 @@ class ConvertToBlot:
         svg = minidom.parseString(self.file_content)
         paths = svg.getElementsByTagName('path')
         polylines = []
-
+    
         for path in paths:
             d = path.getAttribute('d')
             path_obj = svgpathtools.parse_path(d)
             polyline = []
-
+    
             for segment in path_obj:
-                if isinstance(segment, svgpathtools.Line):
-                    polyline.append([segment.start.real, segment.start.imag])
-                    polyline.append([segment.end.real, segment.end.imag])
-                elif isinstance(segment, svgpathtools.CubicBezier):
-                    polyline.append([segment.start.real, segment.start.imag])
-                    polyline.append([segment.control1.real, segment.control1.imag])
-                    polyline.append([segment.control2.real, segment.control2.imag])
-                    polyline.append([segment.end.real, segment.end.imag])
-                elif isinstance(segment, svgpathtools.QuadraticBezier):
-                    polyline.append([segment.start.real, segment.start.imag])
-                    polyline.append([segment.control.real, segment.control.imag])
-                    polyline.append([segment.end.real, segment.end.imag])
-                elif isinstance(segment, svgpathtools.Arc):
-                    polyline.append([segment.start.real, segment.start.imag])
-                    polyline.append([segment.end.real, segment.end.imag])
-
+                num_samples = 200
+                for i in range(num_samples + 1):
+                    point = segment.point(i / num_samples)
+                    polyline.append([point.real, -point.imag])
+    
             polylines.append(polyline)
-
+    
         return polylines
 
         
